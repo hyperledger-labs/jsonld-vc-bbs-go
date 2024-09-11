@@ -4,25 +4,27 @@ import (
 	"encoding/json"
 	"strings"
 
+	c "github.com/hyperledger-labs/jsonld-vc-bbs-go/constants"
 	"github.com/hyperledger-labs/jsonld-vc-bbs-go/internal/context"
 	"github.com/hyperledger-labs/jsonld-vc-bbs-go/model"
 	"github.com/piprate/json-gold/ld"
 )
 
-// NewNormalizer initialises normalizer struct
+// NewNormalizer initializes normalizer struct
 // arguments:
 //
 //	options *model.SignatureSuiteOptions nullable
 //
 // returns
 //
-//	*normalizer
+//	normalizer *normalizer The normalizer instance.
 func NewNormalizer(options *model.SignatureSuiteOptions) *normalizer {
 	defaultLocalContexts := map[string]interface{}{
-		"https://www.w3.org/2018/credentials/v1":      decodeOrPanic(context.ContextCredentialsV1),
-		"https://w3id.org/security/bbs/v1":            decodeOrPanic(context.ContextBbsBlsSignature2020),
-		"https://w3id.org/vc-revocation-list-2020/v1": decodeOrPanic(context.ContextVCRevocationList2020V1),
-		"https://w3id.org/citizenship/v1":             decodeOrPanic(context.ContextResidentCardV1),
+		c.ContextCredentialV1:           decodeOrPanic(context.ContextCredentialsV1),
+		c.ContextSecurityBbsV1:          decodeOrPanic(context.ContextBbsBlsSignature2020),
+		c.ContextVCRevocationList2020V1: decodeOrPanic(context.ContextVCRevocationList2020V1),
+		c.ContextCitizenshipV1:          decodeOrPanic(context.ContextResidentCardV1),
+		c.ContextSecurityV2:             decodeOrPanic(context.ContextSecurityV2),
 	}
 
 	if options != nil && options.Contexts != nil {
@@ -56,7 +58,7 @@ type normalizer struct {
 	documentLoader ld.DocumentLoader
 }
 
-// A defaultDocumentLoader contains a set of predefined contexts for document normalisation
+// A defaultDocumentLoader contains a set of predefined contexts for document normalization
 // A defaultDocumentLoader uses *ld.CachingDocumentLoader to fetch unknown contexts from the internet
 type defaultDocumentLoader struct {
 	remoteDocumentLoader *ld.CachingDocumentLoader
@@ -75,25 +77,20 @@ func (l defaultDocumentLoader) LoadDocument(u string) (*ld.RemoteDocument, error
 	return l.remoteDocumentLoader.LoadDocument(u)
 }
 
-// Normalize performs normalization of json-ld document using
-// format "application/n-quads" and algorithm "URDNA2015"
-// arguments:
+// Normalize Perform normalization of a JSON-LD document using
+// format "application/n-quads" and algorithm "URDNA2015".
 //
-//	document string json-ld object
+//	document string The JSON-LD document to normalize.
 //
 // returns:
 //
 //	messages []string array of string
-//	err error if an error appeared during the normalisation: e.g. necesasry context was not found
+//	err error if an error appeared during the normalization: e.g. necessary context was not found
 func (n *normalizer) Normalize(document string) ([]string, error) {
 	proc := ld.NewJsonLdProcessor()
-	options := ld.NewJsonLdOptions("")
-	options.Format = "application/n-quads"
-	options.Algorithm = "URDNA2015"
-	options.DocumentLoader = n.documentLoader
+	options := n.getStandardOptions()
 
 	var jsonRaw map[string]interface{}
-
 	err := json.Unmarshal([]byte(document), &jsonRaw)
 	if err != nil {
 		return nil, err
@@ -110,4 +107,56 @@ func (n *normalizer) Normalize(document string) ([]string, error) {
 	}
 
 	return result, nil
+}
+
+// Compact Compact a JSON-LD document against a set of contexts.
+//
+//	document model.JsonLdCredential The JSON-LD document to compact.
+//	context interface{} The contexts against which the document has to be compacted.
+//
+// returns:
+//
+//	compactedDocument model.JsonLdCredential
+//	err error
+func (n *normalizer) Compact(document model.JsonLdCredential, context interface{}) (model.JsonLdCredential, error) {
+	proc := ld.NewJsonLdProcessor()
+	options := n.getStandardOptions()
+
+	result, err := proc.Compact(document, context, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// Frame Frame a JSON-LD document according to the passed frame.
+//
+//	input model.JsonLdCredential The document to frame.
+//	frame model.JsonLdFrame The frame document.
+//
+// returns:
+//
+//	framedDocument model.JsonLdCredential
+func (n *normalizer) Frame(input model.JsonLdCredential, frame model.JsonLdFrame) (model.JsonLdCredential, error) {
+	proc := ld.NewJsonLdProcessor()
+	options := n.getStandardOptions()
+	options.OmitGraph = true
+
+	result, err := proc.Frame(input, frame, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// getStandardOptions Get the list of options to use for the normalization.
+func (n *normalizer) getStandardOptions() *ld.JsonLdOptions {
+	options := ld.NewJsonLdOptions("")
+	options.Format = "application/n-quads"
+	options.Algorithm = "URDNA2015"
+	options.DocumentLoader = n.documentLoader
+
+	return options
 }

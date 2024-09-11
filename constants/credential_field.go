@@ -1,11 +1,14 @@
 package constants
 
-const CredentialFieldIssuer = "issuer"
-const CredentialFieldContext = "@context"
-const CredentialFieldType = "type"
-const CredentialFieldCreated = "created"
-const CredentialFieldProof = "proof"
-const CredentialFieldProofPurpose = "proofPurpose"
-const CredentialFieldVerificationMethod = "verificationMethod"
-const CredentialFieldProofValue = "proofValue"
-const CredentialFieldCredentialSubject = "credentialSubject"
+const (
+	CredentialFieldIssuer             = "issuer"
+	CredentialFieldContext            = "@context"
+	CredentialFieldType               = "type"
+	CredentialFieldCreated            = "created"
+	CredentialFieldProof              = "proof"
+	CredentialFieldProofPurpose       = "proofPurpose"
+	CredentialFieldVerificationMethod = "verificationMethod"
+	CredentialFieldProofValue         = "proofValue"
+	CredentialFieldCredentialSubject  = "credentialSubject"
+	CredentialFieldNonce              = "nonce"
+)
