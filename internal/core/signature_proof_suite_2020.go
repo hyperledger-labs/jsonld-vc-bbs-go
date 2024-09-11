@@ -64,7 +64,7 @@ func NewSignatureProofSuite2020(
 //	err error
 func (s *SignatureProofSuite2020) DeriveProof(signedCredential model.JsonLdCredential, frameDocument model.JsonLdFrame, nonceBytes []byte) (model.JsonLdCredential, error) {
 	// 1. Retrieve all the proofs from the credential that can be used to derive our proof
-	credWithoutProofs, proofs, err := s.getProofs(signedCredential)
+	credWithoutProofs, proofs, err := s.getSupportedProofs(signedCredential)
 	if err != nil {
 		return nil, err
 	}
@@ -78,21 +78,24 @@ func (s *SignatureProofSuite2020) DeriveProof(signedCredential model.JsonLdCrede
 		return nil, err
 	}
 
+	// 3. Compute additional derivedProofs if necessary
 	if len(proofs) > 1 {
-		// compute multiple proofs over which to compute the derivedProof
-		derivedProofs := []string{derivedProof[c.CredentialFieldProofValue].(string)}
-		for _, proof := range proofs[1:] {
+		// 3.1.a. If multiple proofs have been found, add them in an array of derived proofs
+		derivedProofs := make([]interface{}, len(proofs))
+		derivedProofs[0] = derivedProof
+
+		for i, proof := range proofs[1:] {
 			_, newDerivedProof, err := s.deriveProof(credWithoutProofs, proof, frameDocument, nonceBytes)
 			if err != nil {
 				return nil, err
 			}
-			derivedProofs = append(derivedProofs, newDerivedProof[c.CredentialFieldProofValue].(string))
+			derivedProofs[i+1] = newDerivedProof
 		}
-		derivedProof[c.CredentialFieldProofValue] = derivedProofs
+		framedCredential[c.CredentialFieldProof] = derivedProofs
+	} else {
+		// 3.1.b. No multiple proofs have been found -> add the derived proof generated at step 2.
+		framedCredential[c.CredentialFieldProof] = derivedProof
 	}
-
-	// 3. Add derivedProof to the framed credential
-	framedCredential[c.CredentialFieldProof] = derivedProof
 
 	return framedCredential, nil
 }
@@ -105,74 +108,83 @@ func (s *SignatureProofSuite2020) DeriveProof(signedCredential model.JsonLdCrede
 //
 //	result *model.VerificationResult
 func (s *SignatureProofSuite2020) VerifyProof(signedCredential model.JsonLdCredential) *model.VerificationResult {
-	// TODO: support verification of multiple proofs
+	signedCredentialCopy := deepCopyMap(signedCredential)
 	// 1. Retrieve the proof from the credential and parse it
-	proof, err := s.getDerivedProof(signedCredential)
+	proofs, err := s.getDerivedProofs(signedCredentialCopy)
 	if err != nil {
 		return &model.VerificationResult{
 			Success: false,
 			Error:   err,
 		}
 	}
-	proofValueB64, ok := proof[c.CredentialFieldProofValue].(string)
-	if !ok {
+	if len(proofs) == 0 {
 		return &model.VerificationResult{
 			Success: false,
-			Error:   fmt.Errorf("Cannot retrieve the proofValue from within the proof."),
-		}
-	}
-	proofValueBytes, err := base64.StdEncoding.DecodeString(proofValueB64)
-	if err != nil {
-		return &model.VerificationResult{
-			Success: false,
-			Error:   fmt.Errorf("The proofValue is not in base64: %w", err),
+			Error:   fmt.Errorf("There were not any provided proofs that can be verified with this suite."),
 		}
 	}
 
-	// 2. Strip off the signature and nonce from the proof in order to recompute the signed statements
-	unsignedProof, _, err := s.createVerifyProofData(proof)
-	if err != nil {
-		return &model.VerificationResult{
-			Success: false,
-			Error:   err,
+	for _, proof := range proofs {
+		proofValueB64, ok := proof[c.CredentialFieldProofValue].(string)
+		if !ok {
+			return &model.VerificationResult{
+				Success: false,
+				Error:   fmt.Errorf("Cannot retrieve the proofValue from within the proof."),
+			}
 		}
-	}
-
-	// 3. Retrieve and parse the nonce used to generate the proof
-	nonceB64, ok := proof[c.CredentialFieldNonce].(string)
-	if !ok {
-		return &model.VerificationResult{
-			Success: false,
-			Error:   fmt.Errorf("Cannot retrieve the nonce from within the proof."),
+		proofValueBytes, err := base64.StdEncoding.DecodeString(proofValueB64)
+		if err != nil {
+			return &model.VerificationResult{
+				Success: false,
+				Error:   fmt.Errorf("The proofValue is not in base64: %w", err),
+			}
 		}
-	}
-	nonceBytes, err := base64.StdEncoding.DecodeString(nonceB64)
-	if err != nil {
-		return &model.VerificationResult{
-			Success: false,
-			Error:   fmt.Errorf("The nonce is not in base64: %w", err),
+
+		// 2. Strip off the signature and nonce from the proof in order to recompute the signed statements
+		unsignedProof, _, err := s.createVerifyProofData(proof)
+		if err != nil {
+			return &model.VerificationResult{
+				Success: false,
+				Error:   err,
+			}
 		}
-	}
 
-	// 4. Recreate the unsigned unsignedCredential
-	unsignedCredential := signedCredential
-	delete(unsignedCredential, c.CredentialFieldProof)
-
-	// 5. Retrieve the statements to verify
-	statementsToVerify, err := s.documentSignatureSuite.prepareDataForSigning(unsignedCredential, unsignedProof)
-	if err != nil {
-		return &model.VerificationResult{
-			Success: false,
-			Error:   err,
+		// 3. Retrieve and parse the nonce used to generate the proof
+		nonceB64, ok := proof[c.CredentialFieldNonce].(string)
+		if !ok {
+			return &model.VerificationResult{
+				Success: false,
+				Error:   fmt.Errorf("Cannot retrieve the nonce from within the proof."),
+			}
 		}
-	}
+		nonceBytes, err := base64.StdEncoding.DecodeString(nonceB64)
+		if err != nil {
+			return &model.VerificationResult{
+				Success: false,
+				Error:   fmt.Errorf("The nonce is not in base64: %w", err),
+			}
+		}
 
-	// 6. Perform the proof verification
-	err = s.curve.VerifyProof(statementsToVerify, proofValueBytes, nonceBytes, s.publicKey)
-	if err != nil {
-		return &model.VerificationResult{
-			Success: false,
-			Error:   err,
+		// 4. Recreate the unsigned unsignedCredential
+		unsignedCredential := signedCredentialCopy
+		delete(signedCredentialCopy, c.CredentialFieldProof)
+
+		// 5. Retrieve the statements to verify
+		statementsToVerify, err := s.documentSignatureSuite.prepareDataForSigning(unsignedCredential, unsignedProof)
+		if err != nil {
+			return &model.VerificationResult{
+				Success: false,
+				Error:   err,
+			}
+		}
+
+		// 6. Perform the proof verification
+		err = s.curve.VerifyProof(statementsToVerify, proofValueBytes, nonceBytes, s.publicKey)
+		if err != nil {
+			return &model.VerificationResult{
+				Success: false,
+				Error:   err,
+			}
 		}
 	}
 
@@ -345,39 +357,34 @@ func (s *SignatureProofSuite2020) createVerifyProofData(proof model.JsonLdProof)
 	return unsignedProof, proofStatements, nil
 }
 
-// getDerivedProof Retrieve the derived proof from a signed JSON-LD credential.
+// getDerivedProofs Retrieve the derived proofs from a framed JSON-LD credential.
 //
-//	signedCredential model.JsonLdCredential The JSON-LD framed credential.
+//	signedCredential model.JsonLdCredential The framed JSON-LD credential.
 //
 // returns:
 //
 //	derivedProof model.JsonLDProof
 //	err error
-func (s *SignatureProofSuite2020) getDerivedProof(signedCredential model.JsonLdCredential) (model.JsonLdProof, error) {
-	proofObj, ok := signedCredential[c.CredentialFieldProof]
-	if !ok {
-		return nil, fmt.Errorf("The credential is not signed: no proof has been found.")
-	}
-	proof, ok := proofObj.(model.JsonLdProof)
-	if !ok {
-		return nil, fmt.Errorf("The proof is not correctly formatted.")
+func (s *SignatureProofSuite2020) getDerivedProofs(framedCredential model.JsonLdCredential) ([]model.JsonLdProof, error) {
+	derivedProofs, _ := s.getProofs(framedCredential)
+
+	for _, proof := range derivedProofs {
+		proofType, ok := proof[c.CredentialFieldType].(string)
+		if !ok {
+			return nil, fmt.Errorf("Cannot retrieve the proof type.")
+		}
+		if proofType != c.CredentialDerivedProofTypeBbsBlsSig2020 {
+			return nil, fmt.Errorf("Expected %s proof type, got %s.", c.CredentialDerivedProofTypeBbsBlsSig2020, proofType)
+		}
+
+		// map derived proof type to the original one for later verification
+		proof[c.CredentialFieldType] = s.mappedDerivedProofType
 	}
 
-	proofType, ok := proof[c.CredentialFieldType].(string)
-	if !ok {
-		return nil, fmt.Errorf("Cannot retrieve the proof type.")
-	}
-	if proofType != c.CredentialDerivedProofTypeBbsBlsSig2020 {
-		return nil, fmt.Errorf("Expected %s proof type, got %s.", c.CredentialDerivedProofTypeBbsBlsSig2020, proofType)
-	}
-
-	// map derived proof type to the original one for later verification
-	proof[c.CredentialFieldType] = s.mappedDerivedProofType
-
-	return proof, nil
+	return derivedProofs, nil
 }
 
-// getProofs Retrieve all the proofs within the JSON-LD credential that can be used
+// getSupportedProofs Retrieve all the proofs within the JSON-LD credential that can be used
 // by this suite to derive a proof.
 //
 //	signedCredential model.JsonLdCredential The JSON-LD framed credential.
@@ -387,27 +394,22 @@ func (s *SignatureProofSuite2020) getDerivedProof(signedCredential model.JsonLdC
 //	unsignedCredential model.JsonLdCredentialNoProof
 //	proofs []model.JsonLDProof
 //	err error
-func (s *SignatureProofSuite2020) getProofs(signedCredential model.JsonLdCredential) (model.JsonLdCredentialNoProof, []model.JsonLdProof, error) {
-	// Step 1: expand the JSON-LD credential against the proof context
+func (s *SignatureProofSuite2020) getSupportedProofs(signedCredential model.JsonLdCredential) (model.JsonLdCredentialNoProof, []model.JsonLdProof, error) {
+	// 1. Expand the JSON-LD credential against the proof context
 	expandedCredential, err := s.normalizer.Compact(signedCredential, c.ContextSecurityV2)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Step 2: extract all the proofs within the expanded credential
-	credProofsSection := expandedCredential[c.CredentialFieldProof]
-	var credProofs []interface{}
-	credProofsArray, isArray := credProofsSection.([]interface{})
-	if !isArray {
-		credProofs = []interface{}{credProofsSection}
-	} else {
-		credProofs = credProofsArray
+	// 2. Extract all the proofs within the expanded credential
+	credProofsArray, err := s.getProofs(expandedCredential)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	// Step 3: filter out all proofs not supported by the current suite
+	// 3. Filter out all proofs not supported by the current suite
 	proofs := make([]model.JsonLdProof, 0)
-	for _, docProof := range credProofs {
-		proof := docProof.(map[string]interface{})
+	for _, proof := range credProofsArray {
 		proofType := proof[c.CredentialFieldType].(string)
 
 		if slices.Contains(s.supportedDerivedProofTypes, proofType) {
@@ -418,6 +420,7 @@ func (s *SignatureProofSuite2020) getProofs(signedCredential model.JsonLdCredent
 		}
 	}
 
+	// 4. Re-compact the credential without the proof
 	delete(expandedCredential, c.CredentialFieldProof)
 	compactedDoc, err := s.normalizer.Compact(expandedCredential, signedCredential[c.CredentialFieldContext])
 	if err != nil {
@@ -425,4 +428,32 @@ func (s *SignatureProofSuite2020) getProofs(signedCredential model.JsonLdCredent
 	}
 
 	return compactedDoc, proofs, nil
+}
+
+func (s *SignatureProofSuite2020) getProofs(signedCredential model.JsonLdCredential) ([]model.JsonLdProof, error) {
+	proofObj, ok := signedCredential[c.CredentialFieldProof]
+	if !ok {
+		return nil, fmt.Errorf("The credential is not signed: no proof has been found.")
+	}
+
+	proofArray, isArray := proofObj.([]interface{})
+	if !isArray {
+		proof, ok := proofObj.(model.JsonLdProof)
+		if !ok {
+			return nil, fmt.Errorf("The proof is not correctly formatted.")
+		}
+
+		proofArray = append(proofArray, proof)
+	}
+
+	proofs := make([]model.JsonLdProof, len(proofArray))
+	for i, proof1 := range proofArray {
+		proof, ok := proof1.(model.JsonLdProof)
+		if !ok {
+			return nil, fmt.Errorf("The proof is not correctly formatted.")
+		}
+		proofs[i] = proof
+	}
+
+	return proofs, nil
 }

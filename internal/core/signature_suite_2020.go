@@ -77,8 +77,8 @@ func (s *SignatureSuite2020) Sign(credential model.JsonLdCredentialNoProof) (mod
 	}
 
 	proof.ProofValue = signature
-	// Delete context since it is not needed for representation
-	proof.Context = nil
+	proof.Context = nil // Delete context since it is not needed for representation -> compact proof format
+	// TODO: support the possibility to add the new proof to the list of existing proofs -> support array of proofs
 	credCopy[c.CredentialFieldProof] = proof
 
 	jsonLdDoc, err := json.Marshal(credCopy)
@@ -96,13 +96,13 @@ func (s *SignatureSuite2020) Sign(credential model.JsonLdCredentialNoProof) (mod
 //
 // arguments:
 //
-//	credential model.JsonLdCredentialNoProof
+//	credential model.JsonLdCredential
 //
 // returns:
 //
 //	messages [][]byte
 //	err error
-func (s *SignatureSuite2020) ProvideSigningData(credential model.JsonLdCredentialNoProof) ([][]byte, error) {
+func (s *SignatureSuite2020) ProvideSigningData(credential model.JsonLdCredential) ([][]byte, error) {
 	credCopy := deepCopyMap(credential)
 
 	proof, ok := credCopy[c.CredentialFieldProof].(model.JsonLdProof)
@@ -139,7 +139,7 @@ func (s *SignatureSuite2020) Verify(credential model.JsonLdCredential) *model.Ve
 
 	var signature []byte
 
-	proof := credential[c.CredentialFieldProof].(map[string]interface{})
+	proof := credential[c.CredentialFieldProof].(model.JsonLdProof)
 	if proofValue, ok := proof[c.CredentialFieldProofValue].(string); ok {
 		signature, err = base64.StdEncoding.DecodeString(proofValue)
 		if err != nil {
@@ -180,7 +180,7 @@ func (s *SignatureSuite2020) createUnsignedProof() (*model.CredentialProof, erro
 		return nil, err
 	}
 
-	partialProof := map[string]interface{}{
+	partialProof := model.JsonLdProof{
 		c.CredentialFieldVerificationMethod: verificationMethod,
 	}
 
