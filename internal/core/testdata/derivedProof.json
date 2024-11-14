@@ -1,0 +1,24 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://w3id.org/citizenship/v1",
+    "https://w3id.org/security/bbs/v1"
+  ],
+  "id": "https://issuer.oidp.uscis.gov/credentials/83627465",
+  "type": ["PermanentResidentCard", "VerifiableCredential"],
+  "credentialSubject": {
+    "id": "did:key:z6MknntgQWCT8Zs5vpQEVoV2HvsfdYfe7b1LTnM9Lty6fD4e",
+    "type": ["MyType", "Person", "PermanentResident"],
+    "birthDate": "1990-11-22"
+  },
+  "issuanceDate": "2019-12-03T12:19:52Z",
+  "issuer": "did:key:zUC79S2TyLyjJmuMoac1q26XtCzhkTtywMo6DLRt5K9jgsCreBQ2NEYd5MZVHy8HZC39qEQ1gSZo2L4zXukMDhtWbCskzy3AZqjzQfdkixtxa2qE8unKXzvHMgE9PDQQEqKytkG",
+  "proof": {
+    "type": "BbsBlsSignatureProof2020",
+    "created": "2024-09-04T12:01:57Z",
+    "nonce": "4mmd5EVmGd0POg+/4M2l0A==",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "ABkA3A4vi8BpX7Y00s2f02eJ/B/q0iBM7HhbQIqiC/42uiDCS3XrAp9BCmnE4q5rZaSTjHhoiybClVfqzlXx/cIurwNo0P+WERwmt4CCi18N5d26DpfwxkxB3CWBCXHYu8SJpiE0t6das+ALfvqsRCKThxq5y9dHp8ByPDZ3sKh6TZN/OJkUamNZvEHuoUlTD2GcJv81AAAAdLCzSB1g8sqg68DRpa8VNLSP8hxpgTEK2A3WwukgAGPIM17CzaqSYLcJpxZnMIxmawAAAAJfgdTf3di+36tZXkiWYwspJD4QywcaRMjv15SZeZMhFByo8y7J0GKLNE4YGkjVpnbzyGuVeLDCTFCWAgyKkN66kN87Loju2eQUvU36xbPD15/vWOFAcLjdZGpPmvDC1yaOsCSnHZ4eUH+bc9ZLYopSAAAADl7vBaO7VFck5X2kVWYMbioiXR3efimRCNE73TmRqhRXHmguW4cQt2ehjZ7b1AfATSCRlKQGr+LvuHycHYpvqUImUXkRFIXdtaml7YZyNe0YFeEgEeHXs7ojE7F+UtyTKGY/7G2EFQ3F42BPH7FzhTUXe2jiOcxMw+z/MJ0TO7bUXuZypC+QpP1M2qbci4romn0dbt4QnBBdXAqGq2iZwUw3nPymLDyFd1LgGVtlJaUloiHml7TDBKhBLlIAKX1CzTz9yHI3mCsf84QmdOC7v4akJ/Ys9Wt5trWxPDZCneaHaKm3d73gy/ODkoWogspsIJzCGnv45+cnXzTyRwnT9g1hyHLHpVFcM4ixQ8V/f0OuR/eVuPS4UVxsgJa7GigHhDg9PzpPoTfqWSug1V9KFrlIdcj2NPsJP52Th3dnsaCWQWLEf9yi9bUWtT2vsyZKVNib5mncP9L6u45+f/fMoBsF8r0GqMGzSX6/K87mQ05JHMJWcq5+e2HAHiwD2gkaCSjCYh46BzV95o+uNiwM4Vsn1AcXyV2El6SLuEc97sw6cj6/lotRBYHFpJeRdwak6L/EUi4Ba505n+wfhjAIAUI=",
+    "verificationMethod": "did:key:zUC79S2TyLyjJmuMoac1q26XtCzhkTtywMo6DLRt5K9jgsCreBQ2NEYd5MZVHy8HZC39qEQ1gSZo2L4zXukMDhtWbCskzy3AZqjzQfdkixtxa2qE8unKXzvHMgE9PDQQEqKytkG#zUC79S2TyLyjJmuMoac1q26XtCzhkTtywMo6DLRt5K9jgsCreBQ2NEYd5MZVHy8HZC39qEQ1gSZo2L4zXukMDhtWbCskzy3AZqjzQfdkixtxa2qE8unKXzvHMgE9PDQQEqKytkG"
+  }
+}

@@ -11,22 +11,7 @@ import (
 	"github.com/hyperledger/aries-bbs-go/bbs"
 )
 
-// NewSignatureSuite initializes and returns SignatureSuite
-//
-//	publicKey []byte
-//	privateKey []byte nullable
-//	options *model.SignatureSuiteOptions nullable
-func NewSignatureSuite2020(publicKey, privateKey []byte, options *model.SignatureSuiteOptions) *SignatureSuite2020 {
-	// TODO verify if initialisation was correct
-	return &SignatureSuite2020{
-		publicKey:  publicKey,
-		privateKey: privateKey,
-		keyEncoder: &KeyEncoder{},
-		normalizer: NewNormalizer(options),
-	}
-}
-
-// A SignatureSuite2020 is initialized with:
+// SignatureSuite2020 is initialized with:
 //
 //	publicKey []byte
 //	privateKey []byte nullable, required when issuance is needed
@@ -44,29 +29,44 @@ type SignatureSuite2020 struct {
 	privateKey []byte
 	keyEncoder *KeyEncoder
 	normalizer *normalizer
+	curve      *bbs.BBSG2Pub
 }
 
-// Sign creates a JSON-LD BbsBlsSignature2020 Credential
-// Requires during initialisation provision of publicKey and privateKey
-// arguments:
+// NewSignatureSuite2020 initializes and returns SignatureSuite
 //
-//	credential model.JsonLDCredentialNoProof the template of the credential which should be signed.
-//	 if issuer is not specified, it will be added to the template based on "did:key" method
+//	publicKey []byte
+//	privateKey []byte nullable
+//	options *model.SignatureSuiteOptions nullable
+func NewSignatureSuite2020(publicKey, privateKey []byte, options *model.SignatureSuiteOptions) *SignatureSuite2020 {
+	return &SignatureSuite2020{
+		publicKey:  publicKey,
+		privateKey: privateKey,
+		keyEncoder: &KeyEncoder{},
+		normalizer: NewNormalizer(options),
+		curve:      bbs.New(ml.Curves[ml.BLS12_381_BBS]),
+	}
+}
+
+// Sign Create a JSON-LD signed credential with a BbsBlsSignature2020 signature.
+// Requires during initialization provision of publicKey and privateKey.
+//
+//	credential model.JsonLdCredentialNoProof The JSON-LD credential to be signed. If issuer is not specified, it will be added to the template based on "did:key" method.
 //
 // returns:
 //
-//	credential model.JsonLDCredential
-//	credential string JSON representation of the credential
+//	signedCredential model.JsonLdCredential
+//	jsonCredential string JSON representation of the credential
 //	err error
-func (s *SignatureSuite2020) Sign(credential model.JsonLDCredentialNoProof) (model.JsonLDCredential, string, error) {
-	s.addCredentialIssuerIfEmpty(credential)
+func (s *SignatureSuite2020) Sign(credential model.JsonLdCredentialNoProof) (model.JsonLdCredential, string, error) {
+	credCopy := deepCopyMap(credential)
+	s.addCredentialIssuerIfEmpty(credCopy)
 
 	proof, err := s.createUnsignedProof()
 	if err != nil {
 		return nil, "", err
 	}
 
-	dataForSigning, err := s.prepareDataForSigning(credential, proof)
+	dataForSigning, err := s.prepareDataForSigning(credCopy, proof)
 	if err != nil {
 		return nil, "", err
 	}
@@ -77,60 +77,58 @@ func (s *SignatureSuite2020) Sign(credential model.JsonLDCredentialNoProof) (mod
 	}
 
 	proof.ProofValue = signature
-	// Delete context since it is not needed for representation
-	proof.Context = nil
-	credential[c.CredentialFieldProof] = proof
+	proof.Context = nil // Delete context since it is not needed for representation -> compact proof format
+	// TODO: support the possibility to add the new proof to the list of existing proofs -> support array of proofs
+	credCopy[c.CredentialFieldProof] = proof
 
-	jsonCredential, err := json.Marshal(credential)
+	jsonLdDoc, err := json.Marshal(credCopy)
 	if err != nil {
 		return nil, "", err
 	}
 
-	return model.JsonLDCredential(deepCopyMap(credential)), string(jsonCredential), nil
+	return credCopy, string(jsonLdDoc), nil
 }
 
-// ProvideSigningData prepares the array of the messages which will be signed/verified during issuance process
-// According to specification, these array will be composed of concatenation of:
-// - normalized "proof" messages
-// - normalized "credential - proof" messages
+// ProvideSigningData prepares the array of the messages which will be signed/verified during issuance process.
+// According to specification, the array will be composed by the concatenation of:
+//   - normalized "proof" messages
+//   - normalized "document" messages
 //
 // arguments:
 //
-//	credential map[string]interface{}
+//	credential model.JsonLdCredential
 //
 // returns:
 //
 //	messages [][]byte
 //	err error
-func (s *SignatureSuite2020) ProvideSigningData(credential map[string]interface{}) ([][]byte, error) {
-	credentialCopy := deepCopyMap(credential)
+func (s *SignatureSuite2020) ProvideSigningData(credential model.JsonLdCredential) ([][]byte, error) {
+	credCopy := deepCopyMap(credential)
 
-	proof, ok := credentialCopy[c.CredentialFieldProof].(map[string]interface{})
+	proof, ok := credCopy[c.CredentialFieldProof].(model.JsonLdProof)
 	if !ok {
-		return nil, fmt.Errorf("provided credential doesn't contain object 'proof'")
+		return nil, fmt.Errorf("provided JSON-LD credential doesn't contain object 'proof'")
 	}
 
-	delete(credentialCopy, c.CredentialFieldProof)
+	delete(credCopy, c.CredentialFieldProof)
 	delete(proof, c.CredentialFieldProofValue)
 
-	fullProof, err := model.CredentialProofFromMap(proof)
+	fullProof, err := model.CredentialProofFromMap(proof, false)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.prepareDataForSigning(model.JsonLDCredentialNoProof(credentialCopy), fullProof)
+	return s.prepareDataForSigning(credCopy, fullProof)
 }
 
-// Verify verifies signed credential. Requires during initialisation provision of only publicKey
+// Verify verifies a signed JSON-LD credential.
 //
-// arguments:
-//
-//	credential model.JsonLDCredential
+//	credential model.JsonLdCredential
 //
 // returns:
 //
 //	result *model.VerificationResult
-func (s *SignatureSuite2020) Verify(credential model.JsonLDCredential) *model.VerificationResult {
+func (s *SignatureSuite2020) Verify(credential model.JsonLdCredential) *model.VerificationResult {
 	signingData, err := s.ProvideSigningData(credential)
 	if err != nil {
 		return &model.VerificationResult{
@@ -141,26 +139,22 @@ func (s *SignatureSuite2020) Verify(credential model.JsonLDCredential) *model.Ve
 
 	var signature []byte
 
-	proof := credential[c.CredentialFieldProof].(map[string]interface{})
+	proof := credential[c.CredentialFieldProof].(model.JsonLdProof)
 	if proofValue, ok := proof[c.CredentialFieldProofValue].(string); ok {
 		signature, err = base64.StdEncoding.DecodeString(proofValue)
-
 		if err != nil {
 			return &model.VerificationResult{
-				Success: false,
-				Error:   fmt.Errorf("proof value could not be decoded from base64 '%s'", err.Error()),
+				Error: fmt.Errorf("proof value could not be decoded from base64 '%s'", err.Error()),
 			}
 		}
 	} else {
 		return &model.VerificationResult{
 			Success: false,
-			Error:   fmt.Errorf("credential proof doesn't contain field '%s'", c.CredentialFieldProofValue),
+			Error:   fmt.Errorf("proof doesn't contain field '%s'", c.CredentialFieldProofValue),
 		}
 	}
 
-	bls := bbs.New(ml.Curves[ml.BLS12_381_BBS])
-
-	err = bls.Verify(signingData, signature, s.publicKey)
+	err = s.curve.Verify(signingData, signature, s.publicKey)
 	if err != nil {
 		return &model.VerificationResult{
 			Success: false,
@@ -173,45 +167,60 @@ func (s *SignatureSuite2020) Verify(credential model.JsonLDCredential) *model.Ve
 	}
 }
 
-// TODO add option to use custom verification method
+// createUnsignedProof Generate the skeleton of a JSON-LD proof.
+//
+// returns:
+//
+//	proof *model.CredentialProof
+//	err error
 func (s *SignatureSuite2020) createUnsignedProof() (*model.CredentialProof, error) {
+	// TODO add option to use custom verification method
 	verificationMethod, err := s.keyEncoder.CreateDidKeyVerificationMethod(s.publicKey)
 	if err != nil {
 		return nil, err
 	}
 
-	partialProof := map[string]interface{}{
+	partialProof := model.JsonLdProof{
 		c.CredentialFieldVerificationMethod: verificationMethod,
 	}
 
-	return model.CredentialProofFromMap(partialProof)
+	return model.CredentialProofFromMap(partialProof, false)
 }
 
-func (s *SignatureSuite2020) prepareDataForSigning(credential model.JsonLDCredentialNoProof, unsignedProof *model.CredentialProof) ([][]byte, error) {
-	document, err := json.Marshal(credential)
+// prepareDataForSigning Transform a JSON-LD credential and the associated proof to a list of normalized messages
+// that can be signed according to the specifications.
+//
+//	credential model.JsonLdCredentialNoProof The JSON-LD credential without the proof.
+//	unsignedProof *model.CredentialProof The JSON-LD proof.
+//
+// returns:
+//
+//	messages [][]byte
+//	err error
+func (s *SignatureSuite2020) prepareDataForSigning(credential model.JsonLdCredentialNoProof, unsignedProof *model.CredentialProof) ([][]byte, error) {
+	// 1. Normalize the JSON-LD unsigned credential
+	credCopy, err := json.Marshal(credential)
+	if err != nil {
+		return nil, err
+	}
+	normalizedCredential, err := s.normalizer.Normalize(string(credCopy))
 	if err != nil {
 		return nil, err
 	}
 
-	cononisedCredential, err := s.normalizer.Normalize(string(document))
+	// 2. Normalize the JSON-LD proof
+	credCopy, err = json.Marshal(unsignedProof)
 	if err != nil {
 		return nil, err
 	}
 
-	document, err = json.Marshal(unsignedProof)
+	normalizedProof, err := s.normalizer.Normalize(string(credCopy))
 	if err != nil {
 		return nil, err
 	}
 
-	canonisedProof, err := s.normalizer.Normalize(string(document))
-	if err != nil {
-		return nil, err
-	}
-
-	// according to specification
-	// canonised proof messages come before the canonised credential messages
-	stringsForSigning := append(canonisedProof, cononisedCredential...)
-
+	// according to specification normalized proof messages come before the normalized credential messages
+	stringsForSigning := append(normalizedProof, normalizedCredential...)
 	bytesForSigning := make([][]byte, len(stringsForSigning))
 	for i, s := range stringsForSigning {
 		bytesForSigning[i] = []byte(s)
@@ -220,15 +229,16 @@ func (s *SignatureSuite2020) prepareDataForSigning(credential model.JsonLDCreden
 	return bytesForSigning, nil
 }
 
-// createBLSSignature
+// createBLSSignature Generate a BBS signature over an array of messages.
+//
+//	dataForSigning [][]byte The messages to sign.
 //
 // returns:
 //
-//	signature string base64 encoded string
+//	signature string Base64 encoded string
 //	err error
 func (s *SignatureSuite2020) createBLSSignature(dataForSigning [][]byte) (string, error) {
-	bls := bbs.New(ml.Curves[ml.BLS12_381_BBS])
-	signatureBytes, err := bls.Sign(dataForSigning, s.privateKey)
+	signatureBytes, err := s.curve.Sign(dataForSigning, s.privateKey)
 	if err != nil {
 		return "", nil
 	}
@@ -236,7 +246,10 @@ func (s *SignatureSuite2020) createBLSSignature(dataForSigning [][]byte) (string
 	return base64.StdEncoding.EncodeToString(signatureBytes), nil
 }
 
-func (s *SignatureSuite2020) addCredentialIssuerIfEmpty(credential model.JsonLDCredentialNoProof) {
+// addCredentialIssuerIfEmpty Add the field "issuer" to a JSON-LD credential to sign if empty.
+//
+//	credential model.JsonLdCredentialNoProof
+func (s *SignatureSuite2020) addCredentialIssuerIfEmpty(credential model.JsonLdCredentialNoProof) {
 	if _, ok := credential[c.CredentialFieldIssuer]; !ok {
 		credential[c.CredentialFieldIssuer], _ = s.keyEncoder.CreateDidKey(s.publicKey)
 	}

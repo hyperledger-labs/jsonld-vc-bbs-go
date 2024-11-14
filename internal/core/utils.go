@@ -8,7 +8,7 @@ func deepCopyMap(m map[string]interface{}) map[string]interface{} {
 	raw, _ := json.Marshal(m)
 
 	var copy map[string]interface{}
-	json.Unmarshal(raw, &copy)
+	_ = json.Unmarshal(raw, &copy)
 
 	return copy
 }
