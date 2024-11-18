@@ -76,9 +76,9 @@ func (s *SignatureSuite2020) Sign(credential model.JsonLdCredentialNoProof) (mod
 		return nil, "", err
 	}
 
-	proof.ProofValue = signature
-	proof.Context = nil // Delete context since it is not needed for representation -> compact proof format
 	// TODO: support the possibility to add the new proof to the list of existing proofs -> support array of proofs
+	model.DeleteContextFromJsonLdProof(proof) // Delete context since it is not needed for representation -> compact proof format
+	proof[c.CredentialFieldProofValue] = signature
 	credCopy[c.CredentialFieldProof] = proof
 
 	jsonLdDoc, err := json.Marshal(credCopy)
@@ -113,12 +113,15 @@ func (s *SignatureSuite2020) ProvideSigningData(credential model.JsonLdCredentia
 	delete(credCopy, c.CredentialFieldProof)
 	delete(proof, c.CredentialFieldProofValue)
 
-	fullProof, err := model.CredentialProofFromMap(proof, false)
-	if err != nil {
-		return nil, err
+	// add proof context if it is compacted
+	if proof[c.CredentialFieldContext] == nil {
+		proof[c.CredentialFieldContext] = []string{
+			c.ContextCredentialV1,
+			c.ContextSecurityBbsV1,
+		}
 	}
 
-	return s.prepareDataForSigning(credCopy, fullProof)
+	return s.prepareDataForSigning(credCopy, proof)
 }
 
 // Verify verifies a signed JSON-LD credential.
@@ -173,18 +176,15 @@ func (s *SignatureSuite2020) Verify(credential model.JsonLdCredential) *model.Ve
 //
 //	proof *model.CredentialProof
 //	err error
-func (s *SignatureSuite2020) createUnsignedProof() (*model.CredentialProof, error) {
+func (s *SignatureSuite2020) createUnsignedProof() (model.JsonLdProof, error) {
 	// TODO add option to use custom verification method
 	verificationMethod, err := s.keyEncoder.CreateDidKeyVerificationMethod(s.publicKey)
 	if err != nil {
 		return nil, err
 	}
+	proof := model.CreateDefaultJsonLDProof(verificationMethod, false)
 
-	partialProof := model.JsonLdProof{
-		c.CredentialFieldVerificationMethod: verificationMethod,
-	}
-
-	return model.CredentialProofFromMap(partialProof, false)
+	return proof, nil
 }
 
 // prepareDataForSigning Transform a JSON-LD credential and the associated proof to a list of normalized messages
@@ -197,7 +197,7 @@ func (s *SignatureSuite2020) createUnsignedProof() (*model.CredentialProof, erro
 //
 //	messages [][]byte
 //	err error
-func (s *SignatureSuite2020) prepareDataForSigning(credential model.JsonLdCredentialNoProof, unsignedProof *model.CredentialProof) ([][]byte, error) {
+func (s *SignatureSuite2020) prepareDataForSigning(credential model.JsonLdCredentialNoProof, unsignedProof model.JsonLdProof) ([][]byte, error) {
 	// 1. Normalize the JSON-LD unsigned credential
 	credCopy, err := json.Marshal(credential)
 	if err != nil {

@@ -1,102 +1,53 @@
 package model
 
 import (
-	"encoding/json"
-	"fmt"
 	"time"
 
 	c "github.com/hyperledger-labs/jsonld-vc-bbs-go/constants"
 )
 
-// CredentialProof The JSON-LD Proof.
-type CredentialProof struct {
-	Context            []string `json:"@context,omitempty"`
-	Type               string   `json:"type"`
-	Created            string   `json:"created"`
-	ProofPurpose       string   `json:"proofPurpose"`
-	VerificationMethod string   `json:"verificationMethod"`
-	Nonce              string   `json:"nonce,omitempty"`
-	ProofValue         string   `json:"proofValue,omitempty"`
-}
+// JsonLdProof The JSON-LD Proof.
+type JsonLdProof = map[string]interface{}
 
-// CredentialProofFromMap Convert a map to a proper CredentialProof.
+// AddContextToJsonLdProof Add the default context to the JSON-LD proof, if none is provided.
 //
 //	proof JsonLDProof The proof as map.
-//	compact bool If true, compact the returned proof removing the '@context' field.
+func AddContextToJsonLdProof(proof JsonLdProof) {
+	// add proof context if it is compacted
+	if proof[c.CredentialFieldContext] == nil {
+		proof[c.CredentialFieldContext] = []string{
+			c.ContextCredentialV1,
+			c.ContextSecurityBbsV1,
+		}
+	}
+}
+
+// DeleteContextFromJsonLdProof Delete the '@context' field frmo the JSON-LD Proof.
+//
+//	proof JsonLDProof The proof as map.
+func DeleteContextFromJsonLdProof(proof JsonLdProof) {
+	delete(proof, c.CredentialFieldContext)
+}
+
+// CreateDefaultJsonLDProof Create a default JSON-LD Proof object.
+//
+//	verificationMethod string The verification method to embed in the proof.
+//	compact bool If true, skip the addition of the '@context' in the proof object.
 //
 // returns:
 //
-//	credentialProof *CredentialProof
-//	err error
-func CredentialProofFromMap(proof JsonLdProof, compact bool) (*CredentialProof, error) {
-	now := time.Now().UTC().Format(c.ProofTimestampFormat)
-
-	defaultProof := &CredentialProof{
-		Created:      now,
-		Type:         c.CredentialProofTypeBbsBlsSig2020,
-		ProofPurpose: c.CredentialProofPurpose,
-	}
-
-	if val, ok := proof[c.CredentialFieldCreated]; ok {
-		defaultProof.Created = val.(string)
-	}
-
-	if val, ok := proof[c.CredentialFieldType]; ok {
-		defaultProof.Type = val.(string)
-	}
-
-	if val, ok := proof[c.CredentialFieldProofPurpose]; ok {
-		defaultProof.ProofPurpose = val.(string)
+//	proof JsonLdProof The JSON-LD proof.
+func CreateDefaultJsonLDProof(verificationMethod string, compact bool) JsonLdProof {
+	defaultProof := JsonLdProof{
+		c.CredentialFieldCreated:            time.Now().UTC().Format(c.ProofTimestampFormat),
+		c.CredentialFieldVerificationMethod: verificationMethod,
+		c.CredentialFieldType:               c.CredentialProofTypeBbsBlsSig2020,
+		c.CredentialFieldProofPurpose:       c.CredentialProofPurpose,
 	}
 
 	if !compact {
-		// add context only if the proof does not need to be compact
-		if val, ok := proof[c.CredentialFieldContext]; ok && !compact {
-			defaultProof.Context = val.([]string)
-		} else {
-			defaultProof.Context = []string{
-				c.ContextCredentialV1,
-				c.ContextSecurityBbsV1,
-			}
-		}
+		AddContextToJsonLdProof(defaultProof)
 	}
 
-	if val, ok := proof[c.CredentialFieldNonce]; ok {
-		defaultProof.Nonce = val.(string)
-	}
-
-	if val, ok := proof[c.CredentialFieldVerificationMethod]; ok {
-		defaultProof.VerificationMethod = val.(string)
-	} else {
-		return nil, fmt.Errorf("verification method is required")
-	}
-
-	if val, ok := proof[c.CredentialFieldProofValue]; ok {
-		defaultProof.ProofValue = val.(string)
-	}
-
-	return defaultProof, nil
-}
-
-// CredentialProofToMap Convert a CredentialProof to a map.
-//
-//	proof *CredentialProof The proof to convert.
-//
-// returns:
-//
-//	proofMap JsonLDProof
-//	err error
-func CredentialProofToMap(proof *CredentialProof) (JsonLdProof, error) {
-	var proofMap JsonLdProof
-	proofBytes, err := json.Marshal(proof)
-	if err != nil {
-		return nil, err
-	}
-
-	err = json.Unmarshal(proofBytes, &proofMap)
-	if err != nil {
-		return nil, err
-	}
-
-	return proofMap, nil
+	return defaultProof
 }

@@ -330,21 +330,16 @@ func (s *SignatureProofSuite2020) createVerifyDocumentData(credential model.Json
 //	unsignedProof *model.CredentialProof
 //	normalizedProof []string
 //	err error
-func (s *SignatureProofSuite2020) createVerifyProofData(proof model.JsonLdProof) (*model.CredentialProof, []string, error) {
-	unsignedProof, err := model.CredentialProofFromMap(proof, false)
-	if err != nil {
-		return nil, nil, err
-	}
+func (s *SignatureProofSuite2020) createVerifyProofData(proof model.JsonLdProof) (model.JsonLdProof, []string, error) {
+	unsignedProof := deepCopyMap(proof)
 
-	unsignedProof.Nonce = ""
-	unsignedProof.ProofValue = ""
+	// add proof context if it is compacted
+	model.AddContextToJsonLdProof(unsignedProof)
 
-	unsignedProofMap, err := model.CredentialProofToMap(unsignedProof)
-	if err != nil {
-		return nil, nil, err
-	}
+	delete(unsignedProof, c.CredentialFieldNonce)
+	delete(unsignedProof, c.CredentialFieldProofValue)
 
-	proofBytes, err := json.Marshal(unsignedProofMap)
+	proofBytes, err := json.Marshal(unsignedProof)
 	if err != nil {
 		return nil, nil, err
 	}
