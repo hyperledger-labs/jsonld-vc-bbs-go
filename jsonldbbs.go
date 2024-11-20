@@ -33,8 +33,7 @@ func NewJsonLDBBSSignatureSuite2020(
 //
 //	suite *core.SignatureProofSuite2020
 func NewJsonLDBBSSignatureProofSuite2020(
-	publicKey,
-	privateKey []byte,
+	publicKey []byte,
 	options *model.SignatureSuiteOptions,
 ) *core.SignatureProofSuite2020 {
 	return core.NewSignatureProofSuite2020(publicKey, options)
